@@ -8,7 +8,7 @@ from telegram.ext import (
 
 # === 🔐 Переменные окружения (меняй в Railway, не в коде!) ===
 TOKEN = os.getenv("8073753782:AAFEz9paFiPit-CAu6kRNabhppGe9nSFF9o")
-ADMIN_ID = int(os.getenv("1613707243"))
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
 # === Этапы регистрации ===
 NICK, ROLE, RANK, OP_GG, DISCORD = range(5)
