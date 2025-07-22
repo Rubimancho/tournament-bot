@@ -7,7 +7,7 @@ from telegram.ext import (
 )
 
 # === 🔐 Переменные окружения (меняй в Railway, не в коде!) ===
-TOKEN = os.getenv("8073753782:AAFEz9paFiPit-CAu6kRNabhppGe9nSFF9o")
+TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
 # === Этапы регистрации ===
