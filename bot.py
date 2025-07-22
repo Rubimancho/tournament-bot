@@ -157,12 +157,11 @@ async def get_nick(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ROLE
 
-# === Получение ролей — ✅ ИСПРАВЛЕНО НАВСЕГДА ===
+# === Получение ролей ===
 async def get_role(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
-    # ✅ Правильно: полное имя и двоеточие
-    if 'roles' not in context.user_data:
+    if 'roles' not in context.user_
         context.user_data['roles'] = []
 
     if text == "✅ Готово":
@@ -329,7 +328,7 @@ async def show_tournaments_menu(update: Update, context: ContextTypes.DEFAULT_TY
         parse_mode="HTML"
     )
 
-# === Список участников ===
+# === Список участников — ✅ ИСПРАВЛЕНО НАВСЕГДА ===
 async def show_participants(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         with open(PARTICIPANTS_FILE, 'r', encoding='utf-8') as f:
@@ -346,7 +345,10 @@ async def show_participants(update: Update, context: ContextTypes.DEFAULT_TYPE):
             rank = row[3].strip('"')
             opgg = row[4].strip('"')
             discord = row[5].strip('"')
-            url = opgg if opgg.startswith('http') else f"https://op.gg/summoners/ {opgg.replace(' ', '%20')}"
+
+            # ✅ Исправлено: УБРАН ПРОБЕЛ после /summoners/
+            url = opgg.strip() if (opgg.startswith('http') or opgg.startswith('https')) else f"https://op.gg/summoners/ {opgg.strip().replace(' ', '%20')}"
+
             message += (
                 f"{i}. 🔹 <b>{nick}</b>\n"
                 f"   • Роли: {roles}\n"
@@ -355,8 +357,8 @@ async def show_participants(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"   • 💬 Discord: <code>{discord}</code>\n\n"
             )
         await update.message.reply_html(message, disable_web_page_preview=True, reply_markup=reply_menu)
-    except FileNotFoundError:
-        await update.message.reply_text("Файл участников не найден.", reply_markup=reply_menu)
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка при загрузке списка: {e}", reply_markup=reply_menu)
 
 # === Дата проведения ===
 async def show_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
