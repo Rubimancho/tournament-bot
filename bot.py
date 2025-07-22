@@ -66,17 +66,44 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text("🎮 Добро пожаловать!\n\nВыбери действие:", reply_markup=reply_menu)
 
-# === Проверка, зарегистрирован ли пользователь ===
+# === Проверка: зарегистрирован ли пользователь ПОЛНОСТЬЮ ===
 def is_registered(user_id):
     try:
         with open(PARTICIPANTS_FILE, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
             for row in reader:
-                if row and row[0] == str(user_id):
-                    return True
+                if len(row) < 7:
+                    continue
+                if row[0] == str(user_id):
+                    # Проверяем, что есть ник, роли, ранг
+                    if row[1].strip() and row[2].strip() and row[3].strip():
+                        return True
         return False
     except FileNotFoundError:
         return False
+
+# === Сброс регистрации ===
+async def restart_registration(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    rows = []
+    deleted = False
+    try:
+        with open(PARTICIPANTS_FILE, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if len(row) > 0 and row[0] == str(user_id):
+                    deleted = True
+                else:
+                    rows.append(row)
+        with open(PARTICIPANTS_FILE, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerows(rows)
+        if deleted:
+            await update.message.reply_text("🔄 Ваша регистрация сброшена. Можете начать заново.")
+        else:
+            await update.message.reply_text("Вы ещё не начинали регистрацию.")
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка: {e}")
 
 # === Редактирование профиля ===
 async def edit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -94,7 +121,7 @@ async def register_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
         await update.message.reply_text(
-            "✅ Вы уже зарегистрированы.\n\n"
+            "📋 Вы уже зарегистрированы.\n\n"
             "Хотите обновить данные?",
             reply_markup=markup
         )
@@ -134,7 +161,7 @@ async def get_nick(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_role(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
-    # ✅ Полностью правильная строка - ИСПРАВЛЕНО
+    # ✅ Правильно: полное имя и двоеточие
     if 'roles' not in context.user_data:
         context.user_data['roles'] = []
 
@@ -191,15 +218,13 @@ async def get_discord(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Обновление профиля
     rows = []
-    user_found = False
     try:
         with open(PARTICIPANTS_FILE, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
             for row in reader:
                 if len(row) > 0 and row[0] == str(user_id):
-                    user_found = True
-                else:
-                    rows.append(row)
+                    continue
+                rows.append(row)
     except FileNotFoundError:
         pass
 
@@ -210,7 +235,7 @@ async def get_discord(update: Update, context: ContextTypes.DEFAULT_TYPE):
         writer.writerow(["User ID", "Никнейм", "Роли", "Ранг", "Op.gg", "Discord", "Время"])
         writer.writerows(rows)
 
-    action = "обновлен" if user_found else "зарегистрирован"
+    action = "обновлен" if is_registered(user_id) else "зарегистрирован"
     await update.message.reply_text(
         f"🎉 Отлично, {nick}! Ваш профиль {action}.\n"
         "Спасибо!",
@@ -492,6 +517,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(conv_handler)
+    app.add_handler(CommandHandler("restart", restart_registration))
     app.add_handler(MessageHandler(filters.TEXT & filters.Regex("^🏆 Наши турниры$"), show_tournaments_menu))
     app.add_handler(MessageHandler(filters.TEXT & filters.Regex("^🏆 Битва регионов$"), rules_regions))
     app.add_handler(MessageHandler(filters.TEXT & filters.Regex("^🎲 Голландский рандом$"), rules_random))
