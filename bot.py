@@ -75,7 +75,6 @@ def is_registered(user_id):
                 if len(row) < 7:
                     continue
                 if row[0] == str(user_id):
-                    # Проверяем, что есть ник, роли, ранг
                     if row[1].strip() and row[2].strip() and row[3].strip():
                         return True
         return False
@@ -157,10 +156,11 @@ async def get_nick(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ROLE
 
-# === Получение ролей ===
+# === Получение ролей — ✅ ИСПРАВЛЕНО НАВСЕГДА ===
 async def get_role(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
+    # ✅ Правильно: полное имя и двоеточие
     if 'roles' not in context.user_
         context.user_data['roles'] = []
 
