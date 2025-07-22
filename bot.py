@@ -8,8 +8,7 @@ from telegram.ext import (
 )
 
 # === Настройки ===
-TOKEN = "8073753782:AAFEz9paFiPit-CAu6kRNabhppGe9nSFF9o"  # ← Замени на свой токен
-ADMIN_ID = 1613707243  # ← Замени на свой Telegram ID
+TOKEN = os.getenv("8073753782:AAFEz9paFiPit-CAu6kRNabhppGe9nSFF9o")ADMIN_ID = int(os.getenv("1613707243"))
 PARTICIPANTS_FILE = "participants.csv"
 TOURNAMENTS_FILE = "tournaments.csv"
 
