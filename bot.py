@@ -134,8 +134,8 @@ async def get_nick(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_role(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
-    # ✅ Полностью правильная строка
-    if 'roles' not in context.user_
+    # ✅ Полностью правильная строка - ИСПРАВЛЕНО
+    if 'roles' not in context.user_data:
         context.user_data['roles'] = []
 
     if text == "✅ Готово":
