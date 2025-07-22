@@ -9,7 +9,13 @@ from telegram.ext import (
 
 # === 🔐 Переменные окружения (настрой в Railway) ===
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+if not TOKEN:
+    raise ValueError("❌ Переменная окружения BOT_TOKEN не установлена")
+
+ADMIN_ID = os.getenv("ADMIN_ID")
+if not ADMIN_ID:
+    raise ValueError("❌ Переменная окружения ADMIN_ID не установлена")
+ADMIN_ID = int(ADMIN_ID)
 
 # === Этапы регистрации ===
 NICK, ROLE, RANK, OP_GG, DISCORD = range(5)
@@ -21,7 +27,7 @@ teams = {'A': [], 'B': []}
 PARTICIPANTS_FILE = "participants.csv"
 TOURNAMENTS_FILE = "tournaments.csv"
 
-# === Главное меню (три турнира) ===
+# === Главное меню ===
 main_menu_keyboard = [
     ["📝 Зарегистрироваться"],
     ["🏆 Битва регионов", "🎲 Голландский рандом"],
@@ -32,19 +38,22 @@ reply_menu = ReplyKeyboardMarkup(main_menu_keyboard, resize_keyboard=True)
 
 # === Создание файлов при старте ===
 def init_files():
+    # Участники
     if not os.path.exists(PARTICIPANTS_FILE):
         with open(PARTICIPANTS_FILE, "w", newline='', encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow(["User ID", "Никнейм", "Роли", "Ранг", "Op.gg", "Discord", "Время"])
+        print("📁 Файл participants.csv создан")
 
+    # Турниры
     if not os.path.exists(TOURNAMENTS_FILE):
         with open(TOURNAMENTS_FILE, "w", newline='', encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerows([
-                ["Битва регионов", "26 июля 2025, 18:00"],
-                ["Голландский рандом", "27 июля 2025, 18:00"],
-                ["Грандиозная тусовка", "28 июля 2025, 18:00"]
-            ])
+            writer.writerow(["Название", "Дата"])
+            writer.writerow(["Битва регионов", "26 июля 2025, 18:00"])
+            writer.writerow(["Голландский рандом", "27 июля 2025, 18:00"])
+            writer.writerow(["Грандиозная тусовка", "28 июля 2025, 18:00"])
+        print("📁 Файл tournaments.csv создан")
 
 # === Старт ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -135,7 +144,7 @@ async def get_discord(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ConversationHandler.END
 
-# === Правила трёх турниров ===
+# === Правила турниров ===
 async def rules_regions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🏆 БИТВА РЕГИОНОВ\n\n"
@@ -202,17 +211,27 @@ async def show_participants(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         with open(TOURNAMENTS_FILE, 'r', encoding='utf-8') as f:
-            rows = list(csv.reader(f))
-        if len(rows) < 2:
-            await update.message.reply_text("📅 Даты пока не установлены.", reply_markup=reply_menu)
+            lines = f.readlines()
+        if not lines or len(lines) < 2:
+            await update.message.reply_text("📅 Пока нет запланированных турниров.", reply_markup=reply_menu)
             return
-        message = "<b>🗓 Даты проведения:</b>\n\n"
-        for row in rows[1:]:
-            if len(row) >= 2:
-                message += f"🔸 <b>{row[0]}</b>: {row[1]}\n"
+
+        message = "<b>🗓 Даты турниров:</b>\n\n"
+        for line in lines[1:]:
+            parts = line.strip().split(',', 1)
+            if len(parts) == 2:
+                name = parts[0].strip().strip('"')
+                date = parts[1].strip().strip('"')
+                message += f"🔸 <b>{name}</b>: {date}\n"
+
         await update.message.reply_html(message, reply_markup=reply_menu)
+
     except FileNotFoundError:
-        await update.message.reply_text("Файл с датами не найден.", reply_markup=reply_menu)
+        await update.message.reply_text("❌ Файл tournaments.csv не найден. Создаю новый...", reply_markup=reply_menu)
+        with open(TOURNAMENTS_FILE, 'w', encoding='utf-8') as f:
+            f.write('Название,Дата\n')
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Ошибка: {e}", reply_markup=reply_menu)
 
 # === /setdate — добавить/обновить турнир ===
 async def setdate(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -220,14 +239,23 @@ async def setdate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ У вас нет прав.")
         return
     if len(context.args) < 2:
-        await update.message.reply_text("UsageId: /setdate Название Дата\nПример: /setdate Финал 30.07.2025_18:00")
+        await update.message.reply_text(
+            "UsageId: /setdate Название Дата\n"
+            "Пример: /setdate Финал 30.07.2025_18:00"
+        )
         return
+
     title = context.args[0].replace("_", " ")
     date = " ".join(context.args[1:]).replace("_", " ")
+
+    # Читаем текущие турниры
     tournaments = []
     try:
         with open(TOURNAMENTS_FILE, 'r', encoding='utf-8') as f:
             tournaments = [row for row in csv.reader(f) if len(row) >= 2]
+        # Заменяем заголовок
+        if tournaments and tournaments[0] == ["Название", "Дата"]:
+            tournaments = tournaments[1:]
     except FileNotFoundError:
         pass
 
@@ -240,10 +268,13 @@ async def setdate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not updated:
         tournaments.append([title, date])
 
+    # Перезаписываем
     with open(TOURNAMENTS_FILE, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
+        writer.writerow(["Название", "Дата"])
         writer.writerows(tournaments)
-    await update.message.reply_text(f"✅ {title}: {date}", reply_markup=reply_menu)
+
+    await update.message.reply_text(f"✅ <b>{title}</b>: {date}", parse_mode="HTML", reply_markup=reply_menu)
 
 # === /clear — очистить всех участников ===
 async def clear_participants(update: Update, context: ContextTypes.DEFAULT_TYPE):
