@@ -71,6 +71,7 @@ def is_registered(user_id):
     try:
         with open(PARTICIPANTS_FILE, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
+            next(reader)  # Пропускаем заголовок
             for row in reader:
                 if len(row) < 7:
                     continue
@@ -89,6 +90,8 @@ async def restart_registration(update: Update, context: ContextTypes.DEFAULT_TYP
     try:
         with open(PARTICIPANTS_FILE, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
+            headers = next(reader)
+            rows.append(headers)
             for row in reader:
                 if len(row) > 0 and row[0] == str(user_id):
                     deleted = True
@@ -124,6 +127,7 @@ async def register_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Хотите обновить данные?",
             reply_markup=markup
         )
+        # Для зарегистрированных пользователей используем отдельный обработчик
         return ROLE
     else:
         context.user_data['roles'] = []
@@ -156,14 +160,15 @@ async def get_nick(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ROLE
 
-# === Получение ролей — ✅ ИСПРАВЛЕНО НАВСЕГДА ===
+# === Получение ролей ===
 async def get_role(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
-    # ✅ Правильно: полное имя и двоеточие
-    if 'roles' not in context.user_
+    # Инициализация списка ролей при необходимости
+    if 'roles' not in context.user_data:
         context.user_data['roles'] = []
 
+    # Если пользователь нажал "Готово"
     if text == "✅ Готово":
         if not context.user_data['roles']:
             await update.message.reply_text("⚠️ Выбери хотя бы одну роль.")
@@ -180,8 +185,9 @@ async def get_role(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Выбери свой ранг:", reply_markup=markup)
         return RANK
 
+    # Обработка выбора роли
     else:
-        role = text.split(' ', 1)[-1]
+        role = text.split(' ', 1)[-1] if ' ' in text else text
         if role not in context.user_data['roles']:
             context.user_data['roles'].append(role)
             await update.message.reply_text(f"➕ Роль '{role}' добавлена.")
@@ -192,7 +198,7 @@ async def get_role(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # === Получение ранга ===
 async def get_rank(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = update.message.text
-    rank = raw_text.split(' ', 1)[-1]
+    rank = raw_text.split(' ', 1)[-1] if ' ' in raw_text else raw_text
     context.user_data['rank'] = rank
     await update.message.reply_text("Ссылка на ваш профиль Op.gg:")
     return OP_GG
@@ -220,18 +226,20 @@ async def get_discord(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         with open(PARTICIPANTS_FILE, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
+            headers = next(reader)
+            rows.append(headers)
             for row in reader:
                 if len(row) > 0 and row[0] == str(user_id):
-                    continue
+                    continue  # Пропускаем старую запись
                 rows.append(row)
     except FileNotFoundError:
-        pass
+        rows.append(["User ID", "Никнейм", "Роли", "Ранг", "Op.gg", "Discord", "Время"])
 
+    # Добавляем новую запись
     rows.append([user_id, nick, roles, rank, opgg, discord_nick, time])
 
     with open(PARTICIPANTS_FILE, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        writer.writerow(["User ID", "Никнейм", "Роли", "Ранг", "Op.gg", "Discord", "Время"])
         writer.writerows(rows)
 
     action = "обновлен" if is_registered(user_id) else "зарегистрирован"
@@ -240,6 +248,7 @@ async def get_discord(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Спасибо!",
         reply_markup=reply_menu
     )
+    context.user_data.clear()
     return ConversationHandler.END
 
 # === Правила турниров ===
@@ -328,26 +337,34 @@ async def show_tournaments_menu(update: Update, context: ContextTypes.DEFAULT_TY
         parse_mode="HTML"
     )
 
-# === Список участников — ✅ ИСПРАВЛЕНО НАВСЕГДА ===
+# === Список участников ===
 async def show_participants(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         with open(PARTICIPANTS_FILE, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
-            rows = list(reader)
-        if len(rows) <= 1:
+            next(reader)  # Пропускаем заголовок
+            participants = list(reader)
+            
+        if not participants:
             await update.message.reply_text("Пока никто не зарегистрирован.", reply_markup=reply_menu)
             return
-        message = f"📋 <b>Зарегистрировано: {len(rows) - 1}</b>:\n\n"
-        for i, row in enumerate(rows[1:], start=1):
-            if len(row) < 7: continue
-            nick = row[1].strip('"')
-            roles = row[2].strip('"')
-            rank = row[3].strip('"')
-            opgg = row[4].strip('"')
-            discord = row[5].strip('"')
+            
+        message = f"📋 <b>Зарегистрировано: {len(participants)}</b>:\n\n"
+        for i, row in enumerate(participants, start=1):
+            if len(row) < 7: 
+                continue
+                
+            nick = row[1].strip()
+            roles = row[2].strip()
+            rank = row[3].strip()
+            opgg = row[4].strip()
+            discord = row[5].strip()
 
-            # ✅ Исправлено: УБРАН ПРОБЕЛ после /summoners/
-            url = opgg.strip() if (opgg.startswith('http') or opgg.startswith('https')) else f"https://op.gg/summoners/ {opgg.strip().replace(' ', '%20')}"
+            # Формирование корректной ссылки op.gg
+            if opgg.startswith('http://') or opgg.startswith('https://'):
+                url = opgg
+            else:
+                url = f"https://op.gg/summoners/{opgg.replace(' ', '%20')}"
 
             message += (
                 f"{i}. 🔹 <b>{nick}</b>\n"
@@ -356,6 +373,7 @@ async def show_participants(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f'   • <a href="{url}">🎮 Op.gg</a>\n'
                 f"   • 💬 Discord: <code>{discord}</code>\n\n"
             )
+            
         await update.message.reply_html(message, disable_web_page_preview=True, reply_markup=reply_menu)
     except Exception as e:
         await update.message.reply_text(f"Ошибка при загрузке списка: {e}", reply_markup=reply_menu)
@@ -364,17 +382,22 @@ async def show_participants(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         with open(TOURNAMENTS_FILE, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        if not lines or len(lines) < 2:
+            reader = csv.reader(f)
+            next(reader)  # Пропускаем заголовок
+            tournaments = list(reader)
+            
+        if not tournaments:
             await update.message.reply_text("📅 Пока нет запланированных турниров.", reply_markup=reply_menu)
             return
+            
         message = "<b>🗓 Даты турниров:</b>\n\n"
-        for line in lines[1:]:
-            parts = line.strip().split(',', 1)
-            if len(parts) == 2:
-                name = parts[0].strip().strip('"')
-                date = parts[1].strip().strip('"')
-                message += f"🔸 <b>{name}</b>: {date}\n"
+        for tournament in tournaments:
+            if len(tournament) < 2:
+                continue
+            name = tournament[0].strip()
+            date = tournament[1].strip()
+            message += f"🔸 <b>{name}</b>: {date}\n"
+            
         await update.message.reply_html(message, reply_markup=reply_menu)
     except FileNotFoundError:
         await update.message.reply_text("❌ Файл tournaments.csv не найден.", reply_markup=reply_menu)
@@ -384,40 +407,46 @@ async def setdate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("⛔ У вас нет прав.")
         return
+        
     if len(context.args) < 2:
-        await update.message.reply_text("UsageId: /setdate Название Дата\nПример: /setdate Final 30.07.2025_18:00")
+        await update.message.reply_text("Использование: /setdate Название Дата\nПример: /setdate Final 30.07.2025 18:00")
         return
-    title = context.args[0].replace("_", " ")
-    date = " ".join(context.args[1:]).replace("_", " ")
+        
+    title = " ".join(context.args[:-1])
+    date = context.args[-1]
+    
     tournaments = []
     try:
         with open(TOURNAMENTS_FILE, 'r', encoding='utf-8') as f:
-            tournaments = [row for row in csv.reader(f) if len(row) >= 2]
-        if tournaments and tournaments[0] == ["Название", "Дата"]:
-            tournaments = tournaments[1:]
+            reader = csv.reader(f)
+            headers = next(reader)
+            tournaments = list(reader)
     except FileNotFoundError:
-        pass
-    updated = False
-    for row in tournaments:
-        if row[0].lower() == title.lower():
-            row[1] = date
-            updated = True
-    if not updated:
-        tournaments.append([title, date])
+        headers = ["Название", "Дата"]
+    
+    # Удаляем старую запись с таким же названием
+    updated_tournaments = [t for t in tournaments if len(t) > 0 and t[0].lower() != title.lower()]
+    
+    # Добавляем новую запись
+    updated_tournaments.append([title, date])
+    
     with open(TOURNAMENTS_FILE, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        writer.writerow(["Название", "Дата"])
-        writer.writerows(tournaments)
-    await update.message.reply_text(f"✅ <b>{title}</b>: {date}", parse_mode="HTML", reply_markup=reply_menu)
+        writer.writerow(headers)
+        writer.writerows(updated_tournaments)
+        
+    await update.message.reply_text(f"✅ Обновлено: <b>{title}</b> - {date}", parse_mode="HTML", reply_markup=reply_menu)
 
 # === /clear — очистить всех участников ===
 async def clear_participants(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Только организатор.")
         return
+        
     with open(PARTICIPANTS_FILE, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(["User ID", "Никнейм", "Роли", "Ранг", "Op.gg", "Discord", "Время"])
+        
     await update.message.reply_text("✅ Список участников очищен.", reply_markup=reply_menu)
 
 # === /delete ID — удалить одного участника ===
@@ -425,20 +454,26 @@ async def delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Только организатор.")
         return
+        
     if not context.args:
-        await update.message.reply_text("UsageId: /delete 123456789")
+        await update.message.reply_text("Использование: /delete USER_ID")
         return
+        
     target_id = context.args[0]
     rows = []
     deleted = False
+    
     try:
         with open(PARTICIPANTS_FILE, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
+            headers = next(reader)
+            rows.append(headers)
             for row in reader:
                 if len(row) > 0 and row[0] == target_id:
                     deleted = True
                 else:
                     rows.append(row)
+                    
         if deleted:
             with open(PARTICIPANTS_FILE, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
@@ -454,8 +489,8 @@ async def get_participants_list():
     try:
         with open(PARTICIPANTS_FILE, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
-            rows = list(reader)
-        return [{"id": row[0], "nick": row[1].strip('"')} for row in rows[1:] if len(row) > 1]
+            next(reader)  # Пропускаем заголовок
+            return [{"id": row[0], "nick": row[1].strip()} for row in reader if len(row) > 1]
     except FileNotFoundError:
         return []
 
@@ -463,17 +498,22 @@ async def draft_teams(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Только организатор.")
         return
+        
     participants = await get_participants_list()
     if not participants:
         await update.message.reply_text("Пока нет участников.")
         return
+        
     teams['A'].clear()
     teams['B'].clear()
-    keyboard = [
-        [InlineKeyboardButton("A", callback_data=f"team_a:{p['id']}:{p['nick']}"),
-         InlineKeyboardButton("B", callback_data=f"team_b:{p['id']}:{p['nick']}")]
-        for p in participants
-    ]
+    
+    keyboard = []
+    for p in participants:
+        keyboard.append([
+            InlineKeyboardButton("A", callback_data=f"team_a:{p['id']}:{p['nick']}"),
+            InlineKeyboardButton("B", callback_data=f"team_b:{p['id']}:{p['nick']}")
+        ])
+        
     await update.message.reply_text(
         "📋 Выбери команду для каждого игрока:",
         reply_markup=InlineKeyboardMarkup(keyboard)
@@ -483,14 +523,20 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data.split(":", 2)
-    if len(data) != 3: return
-    team_key, user_id, nick = data
-    team_name = 'A' if 'a' in team_key else 'B'
-    if nick in teams['A'] or nick in teams['B']:
-        await query.edit_message_text(text=f"⚠️ {nick} уже в команде!")
+    if len(data) != 3: 
         return
+        
+    team_key, user_id, nick = data
+    team_name = 'A' if team_key == 'team_a' else 'B'
+    
+    # Удаляем игрока из другой команды если был
+    if nick in teams['A']:
+        teams['A'].remove(nick)
+    if nick in teams['B']:
+        teams['B'].remove(nick)
+        
     teams[team_name].append(nick)
-    await query.edit_message_text(text=f"✅ {nick} в Team {team_name}")
+    await query.edit_message_text(text=f"✅ {nick} добавлен в Team {team_name}")
 
 async def show_teams(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg_a = "\n".join([f"• {p}" for p in teams['A']]) if teams['A'] else "Пусто"
@@ -499,6 +545,13 @@ async def show_teams(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<b>📋 Состав команд:</b>\n\n<b>Team A</b>:\n{msg_a}\n\n<b>Team B</b>:\n{msg_b}",
         parse_mode="HTML"
     )
+
+# === Обработчик состояния ROLE ===
+async def handle_role_state(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if 'roles' in context.user_data:
+        return await get_role(update, context)
+    else:
+        return await handle_choice(update, context)
 
 # === Запуск бота ===
 def main():
@@ -509,7 +562,7 @@ def main():
         entry_points=[MessageHandler(filters.TEXT & filters.Regex("^(📝 Зарегистрироваться|📝 Редактировать профиль)$"), register_start)],
         states={
             NICK: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_nick)],
-            ROLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_choice)],
+            ROLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_role_state)],
             RANK: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_rank)],
             OP_GG: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_opgg)],
             DISCORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_discord)],
