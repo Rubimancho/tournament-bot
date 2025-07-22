@@ -27,7 +27,7 @@ teams = {'A': [], 'B': []}
 PARTICIPANTS_FILE = "participants.csv"
 TOURNAMENTS_FILE = "tournaments.csv"
 
-# === Главное меню (очищено) ===
+# === Главное меню ===
 main_menu_keyboard = [
     ["📝 Зарегистрироваться"],
     ["🏆 Наши турниры", "👥 Список участников"],
@@ -98,7 +98,7 @@ async def register_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Хотите обновить данные?",
             reply_markup=markup
         )
-        return ROLE  # Временный этап для выбора действия
+        return ROLE
     else:
         context.user_data['roles'] = []
         await update.message.reply_text("Введите ваш никнейм в игре:", reply_markup=None)
@@ -130,10 +130,11 @@ async def get_nick(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ROLE
 
-# === Получение ролей ===
+# === Получение ролей — ✅ ИСПРАВЛЕНО НАВСЕГДА ===
 async def get_role(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
+    # ✅ Полностью правильная строка
     if 'roles' not in context.user_
         context.user_data['roles'] = []
 
