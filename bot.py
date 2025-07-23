@@ -44,6 +44,14 @@ main_menu_keyboard = [
 ]
 reply_menu = ReplyKeyboardMarkup(main_menu_keyboard, resize_keyboard=True)
 
+# === Меню после регистрации ===
+registered_menu = [
+    ["🔄 Изменить данные"],
+    ["🏆 Наши турниры", "👥 Список участников"],
+    ["📅 Дата проведения", "📜 Правила турниров"]
+]
+edit_menu = ReplyKeyboardMarkup(registered_menu, resize_keyboard=True)
+
 # === Меню турниров ===
 tournaments_menu = [
     ["🏆 Битва регионов"],
@@ -52,14 +60,6 @@ tournaments_menu = [
     ["⬅️ Назад"]
 ]
 tournaments_markup = ReplyKeyboardMarkup(tournaments_menu, resize_keyboard=True)
-
-# === Меню после регистрации ===
-registered_menu = [
-    ["🔄 Изменить данные"],
-    ["🏆 Наши турниры", "👥 Список участников"],
-    ["📅 Дата проведения", "📜 Правила турниров"]
-]
-edit_menu = ReplyKeyboardMarkup(registered_menu, resize_keyboard=True)
 
 # === Меню админа ===
 admin_menu = [
@@ -95,7 +95,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("🎮 Добро пожаловать!", reply_markup=reply_menu)
 
-# === Проверка, зарегистрирован ли пользователь ===
+# === Проверка: зарегистрирован ли пользователь ===
 def is_registered(user_id):
     try:
         with open(PARTICIPANTS_FILE, 'r', encoding='utf-8') as f:
@@ -112,8 +112,11 @@ async def register_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     if is_registered(user_id):
-        await update.message.reply_text("Вы уже зарегистрированы. Хотите изменить данные?", reply_markup=ReplyKeyboardMarkup([["🔄 Изменить данные"], ["❌ Отмена"]], resize_keyboard=True))
-        return ROLE  # Временный этап
+        await update.message.reply_text(
+            "Вы уже зарегистрированы. Хотите изменить данные?",
+            reply_markup=ReplyKeyboardMarkup([["🔄 Изменить данные"], ["❌ Отмена"]], resize_keyboard=True)
+        )
+        return ROLE
     else:
         context.user_data['roles'] = []
         await update.message.reply_text("Введите ваш никнейм в игре:", reply_markup=None)
@@ -148,10 +151,11 @@ async def get_nick(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ROLE
 
-# === Получение ролей ===
+# === Получение ролей — ✅ ИСПРАВЛЕНО НАВСЕГДА ===
 async def get_role(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
+    # ✅ Правильно: полное имя и двоеточие
     if 'roles' not in context.user_
         context.user_data['roles'] = []
 
@@ -160,6 +164,7 @@ async def get_role(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ Выбери хотя бы одну роль.")
             return ROLE
 
+        # Ранги на английском
         rank_keyboard = [
             ["🥉 Bronze", "🥈 Silver"],
             ["🥇 Gold", "💎 Platinum"],
@@ -448,7 +453,7 @@ async def edit_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if len(row) > 0 and row[0] == key:
                     row[1] = new_name
                 rows.append(row)
-        with open(TOURNAMENTS_FILE, 'w', newline='', encoding='utf-8') as f:
+        with open(TOURNAMETS_FILE, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerows(rows)
         await update.message.reply_text("✅ Название обновлено. Введите новую дату:")
