@@ -1,53 +1,365 @@
-Судя по вашему сообщению, причина проблемы заключается в конфликте запросов от разных экземпляров бота. Это означает, что одновременно запущено два экземпляра вашего бота, каждый из которых пытается получать обновления (команда `getUpdates`) от сервера Telegram API.
+import os
+import csv
+from datetime import datetime
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+    ConversationHandler,
+    CallbackQueryHandler
+)
 
-Эта ситуация часто возникает, если вы случайно запустили бота дважды (например, одна копия запущена локально, вторая размещена на сервере типа Railway или Heroku), либо ваше приложение переинициализирует экземпляр бота при каждом развёртывании.
+# === 🔑 ЗАМЕНИ НА СВОЙ ТОКЕН ===
+TOKEN = os.getenv("BOT_TOKEN")
+if not TOKEN:
+    raise ValueError("❌ Переменная окружения BOT_TOKEN не установлена")
 
-### Возможные причины конфликта:
+# === 👤 ЗАМЕНИ НА СВОЙ ID ===
+ADMIN_ID = os.getenv("ADMIN_ID")
+if not ADMIN_ID:
+    raise ValueError("❌ Переменная окружения ADMIN_ID не установлена")
+ADMIN_ID = int(ADMIN_ID)
 
-1. **Одновременный запуск нескольких копий бота**: Возможно, одна версия запущена на вашем компьютере, а другая размещённая в облаке (Railway).
-2. **Некорректная настройка развёртывания**: Может происходить повторный запуск бота при каждой сборке проекта.
-3. **Webhooks и Polling одновременно**: Иногда используется комбинация Webhook (получение сообщений через HTTP-запросы) и Long Polling (опрос сервера каждые несколько секунд), что тоже вызывает конфликты.
+# === 📁 ФАЙЛЫ ===
+PARTICIPANTS_FILE = "participants.csv"
+TOURNAMENTS_FILE = "tournaments.csv"
 
-### Как решить проблему:
+# === 🎯 ЭТАПЫ РЕГИСТРАЦИИ ===
+NICK, ROLE, RANK, OP_GG, DISCORD = range(5)
 
-1. **Останавливаем лишние копии бота**:
-   Проверьте, запущен ли ваш бот на другом устройстве или платформе, и остановите ненужные экземпляры.
+# === 🎯 МЕНЮ ===
+main_menu_kb = [
+    ["📝 Зарегистрироваться", "📄 Редактировать профиль"],
+    ["👥 Список участников", "📅 Дата проведения"],
+    ["📜 Правила турниров"]
+]
+reply_menu = ReplyKeyboardMarkup(main_menu_kb, resize_keyboard=True)
 
-2. **Используем Webhook вместо Polling**:
-   Лучше всего настроить Webhook для приема сообщений от Telegram. Ваш сервер получит уведомления напрямую, что быстрее и надёжнее, чем постоянный опрос (`Polling`).
+# === СОЗДАНИЕ ФАЙЛОВ ===
+def init_files():
+    if not os.path.exists(PARTICIPANTS_FILE):
+        with open(PARTICIPANTS_FILE, "w", newline='', encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["User ID", "Никнейм", "Роли", "Ранг", "Op.gg", "Discord", "Время"])
+        print("📁 Файл participants.csv создан")
 
-   ### Настройка Webhook:
+    if not os.path.exists(TOURNAMENTS_FILE):
+        with open(TOURNAMENTS_FILE, "w", newline='', encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Название", "Дата"])
+        print("📁 Файл tournaments.csv создан")
 
-   Откройте ваш исходный код и замените вызов `.run_polling()` на настройку Webhook:
+# === /start ===
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+    await update.message.reply_text(
+        "🎮 Добро пожаловать на турнир!\n\nВыбери действие:",
+        reply_markup=reply_menu
+    )
 
-   ```python
-   async def on_startup(application):
-       webhook_url = f"https://your_railway_domain/api"
-       await application.bot.set_webhook(url=webhook_url)
+# === ОБРАБОТКА РЕГИСТРАЦИИ ===
+async def register_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    # Проверяем, зарегистрирован ли уже пользователь
+    try:
+        with open(PARTICIPANTS_FILE, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if len(row) > 0 and str(user_id) == row[0]:
+                    await update.message.reply_text("Вы уже зарегистрированы!")
+                    return ConversationHandler.END
+    except FileNotFoundError:
+        pass
+    
+    await update.message.reply_text("Введите ваш никнейм в игре:", reply_markup=None)
+    return NICK
 
-   def main() -> None:
-       application = Application.builder().token(TOKEN).build()
+async def get_nick(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['nick'] = update.message.text
 
-       # Остальной код остаётся прежним
+    role_kb = [
+        ["🛡️ Топ", "🌲 Джангл"],
+        ["🌀 Мид", "🏹 ADC"],
+        ["🧙 Саппорт"],
+        ["✅ Готово"]
+    ]
+    markup = ReplyKeyboardMarkup(role_kb, resize_keyboard=True)
+    await update.message.reply_text(
+        "Выбери роли (можно несколько). Когда закончишь — нажми «✅ Готово»:",
+        reply_markup=markup
+    )
+    context.user_data['roles'] = []
+    return ROLE
 
-       # Применяем настройки Webhook
-       application.add_event_handler(on_startup)
-       
-       # Старт приложения с поддержкой Webhook
-       application.run_webhook(listen="0.0.0.0", port=int(os.environ.get("PORT")), webhook_url=f"https://your_railway_domain/api")
+async def get_role(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
 
-   if __name__ == "__main__":
-       main()
-   ```
+    if 'roles' not in context.user_data:
+        context.user_data['roles'] = []
 
-   Здесь важно заменить `your_railway_domain` на реальный домен вашего сервиса (например, полученный от Railway).
+    if text == "✅ Готово":
+        if not context.user_data['roles']:
+            await update.message.reply_text("⚠️ Выбери хотя бы одну роль.")
+            return ROLE
 
-3. **Использование правильного режима развёртывания**:
-   В сервисе Railway можно выбрать режим развёртывания, при котором каждая новая сборка автоматически останавливает предыдущий экземпляр бота перед стартом нового. Убедитесь, что ваша конфигурация настроена соответствующим образом.
+        rank_kb = [
+            ["🥉 Bronze", "🥈 Silver"],
+            ["🥇 Gold", "💎 Platinum"],
+            ["🟩 Emerald", "🔷 Diamond"],
+            ["⭐ Master", "👑 Grandmaster", "🏆 Challenger"]
+        ]
+        markup = ReplyKeyboardMarkup(rank_kb, resize_keyboard=True, one_time_keyboard=True)
+        await update.message.reply_text("Выбери свой ранг:", reply_markup=markup)
+        return RANK
 
-4. **Перезапустить бота после устранения конфликтов**:
-   После того, как убедились, что лишняя копия отключена, можете попробовать перезапустить бота на Railway.
+    else:
+        role = text.split(' ', 1)[-1]
+        if role not in context.user_data['roles']:
+            context.user_data['roles'].append(role)
+            await update.message.reply_text(f"➕ Роль '{role}' добавлена.")
+        else:
+            await update.message.reply_text(f"✔️ Роль '{role}' уже есть.")
+        return ROLE
 
-### Заключение:
+async def get_rank(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['rank'] = update.message.text
+    await update.message.reply_text("Ссылка на ваш профиль Op.gg:")
+    return OP_GG
 
-Если всё выполнено верно, ваш бот заработает стабильно, и сообщение о конфликте исчезнет. Если возникнут сложности, пожалуйста, предоставьте дополнительную информацию о вашей среде разработки и конфигурировании Railway.
+async def get_opgg(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['opgg'] = update.message.text
+    await update.message.reply_text("Ваш Discord (например: player#1234):")
+    return DISCORD
+
+async def get_discord(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    nick = context.user_data['nick']
+    roles = ", ".join(context.user_data['roles'])
+    rank = context.user_data['rank']
+    opgg = context.user_data['opgg']
+    discord = update.message.text.split('#')[0]
+    user_id = update.effective_user.id
+    time = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    # Сохраняем в CSV
+    with open(PARTICIPANTS_FILE, 'a', newline='', encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([user_id, nick, roles, rank, opgg, discord, time])
+
+    await update.message.reply_text(
+        f"🎉 Отлично, {nick}! Вы успешно зарегистрированы.\n"
+        "Ждём вас на турнире!",
+        reply_markup=reply_menu
+    )
+    return ConversationHandler.END
+
+# === ОБРАБОТКА РЕДАКТИРОВАНИЯ ПРОФИЛЯ ===
+async def edit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    participant = find_participant_by_id(user_id)
+    if not participant:
+        await update.message.reply_text("Вы не зарегистрированы. Сначала зарегистрируйтесь.")
+        return
+
+    fields = {
+        "nick": "Изменить никнейм",
+        "roles": "Изменить роли",
+        "rank": "Изменить ранг",
+        "opgg": "Изменить профиль Op.gg",
+        "discord": "Изменить Discord"
+    }
+
+    keyboard = [[InlineKeyboardButton(text=v, callback_data=k)] for k, v in fields.items()]
+    keyboard.append([InlineKeyboardButton(text="Отмена", callback_data="cancel_edit")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text("Выберите поле для редактирования:", reply_markup=reply_markup)
+    return "EDITING_PROFILE"
+
+async def process_field_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    field_name = query.data
+    await query.answer()
+
+    if field_name == "cancel_edit":
+        await query.edit_message_text("Редактирование отменено.")
+        return ConversationHandler.END
+
+    user_id = update.effective_user.id
+    participant = find_participant_by_id(user_id)
+    current_value = getattr(participant, field_name)
+
+    await query.edit_message_text(f"Текущее значение: {current_value}\nВведите новое значение:")
+    context.user_data["editing_field"] = field_name
+    return "WAITING_FOR_VALUE"
+
+async def save_edited_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    new_value = update.message.text
+    editing_field = context.user_data.pop("editing_field")
+
+    # Загружаем всех участников
+    participants = load_participants()
+    index = next((i for i, p in enumerate(participants) if p.user_id == user_id), None)
+    if index is None:
+        await update.message.reply_text("Ошибка при поиске участника.")
+        return ConversationHandler.END
+
+    # Изменяем значения
+    setattr(participants[index], editing_field, new_value)
+    save_participants(participants)
+
+    await update.message.reply_text("Данные успешно обновлены.", reply_markup=reply_menu)
+    return ConversationHandler.END
+
+# === ПОЛЕЗНЫЕ КЛАССЫ И ФУНКЦИИ ===
+class Participant:
+    def __init__(self, data_row):
+        self.user_id = data_row[0]
+        self.nick = data_row[1]
+        self.roles = data_row[2]
+        self.rank = data_row[3]
+        self.opgg = data_row[4]
+        self.discord = data_row[5]
+        self.time = data_row[6]
+
+def load_participants():
+    try:
+        with open(PARTICIPANTS_FILE, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            next(reader)  # Пропускаем заголовок
+            return [Participant(row) for row in reader if len(row) == 7]
+    except FileNotFoundError:
+        return []
+
+def save_participants(participants):
+    with open(PARTICIPANTS_FILE, 'w', newline='', encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["User ID", "Никнейм", "Роли", "Ранг", "Op.gg", "Discord", "Время"])
+        for p in participants:
+            writer.writerow([p.user_id, p.nick, p.roles, p.rank, p.opgg, p.discord, p.time])
+
+def find_participant_by_id(user_id):
+    participants = load_participants()
+    return next((p for p in participants if p.user_id == str(user_id)), None)
+
+# === СПИСОК УЧАСТНИКОВ ===
+async def show_participants(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    participants = load_participants()
+    if not participants:
+        await update.message.reply_text("Пока никто не зарегистрирован.", reply_markup=reply_menu)
+        return
+
+    message = f"📋 <b>Зарегистрировано: {len(participants)} участник(а)</b>:\n\n"
+    for idx, p in enumerate(participants, start=1):
+        message += (
+            f"{idx}. 🔹 <b>{p.nick}</b>\n"
+            f"   • Роли: {p.roles}\n"
+            f"   • Ранг: {p.rank}\n"
+            f'   • <a href="{format_opgg_link(p.opgg)}">🎮 Op.gg</a>\n'
+            f"   • Discord: <code>{p.discord}</code>\n\n"
+        )
+    
+    await update.message.reply_html(message, disable_web_page_preview=True, reply_markup=reply_menu)
+
+def format_opgg_link(opgg):
+    if opgg.startswith('http'):
+        return opgg
+    else:
+        return f"https://op.gg/summoners/{opgg.replace(' ', '%20')}"
+
+# === ДАТА ПРОВЕДЕНИЯ ===
+async def show_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        with open(TOURNAMENTS_FILE, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            next(reader)  # Пропускаем заголовок
+            tournaments = list(reader)
+    except FileNotFoundError:
+        await update.message.reply_text("Нет запланированных турниров.", reply_markup=reply_menu)
+        return
+
+    if not tournaments:
+        await update.message.reply_text("Нет запланированных турниров.", reply_markup=reply_menu)
+        return
+
+    message = "<b>🗓️ Планируемые турниры:</b>\n\n"
+    for idx, (name, date) in enumerate(tournaments, start=1):
+        message += f"{idx}. ⬣️ <b>{name}:</b> {date}\n"
+
+    await update.message.reply_html(message, reply_markup=reply_menu)
+
+# === ПРАВИЛА ТУРНИРОВ ===
+async def show_rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    rules_text = """
+📜 <b>ПРАВИЛА ТУРНИРОВ</b>
+
+<b>🏆 БИТВА РЕГИОНОВ</b>
+1. Формат: Best of Five (Bo5)
+2. Команды: 2 по 5 человек
+3. Выбор региона: только один раз за матч
+4. Баны отсутствуют
+5. Спорные вопросы решают организаторы
+
+<b>🎲 ГОЛЛАНДСКИЙ РАНДОМ</b>
+1. Формат: 5v5, Bo5
+2. Команды формируются по MMR
+3. Система смещения ролей
+4. Рандомный выбор чемпионов
+5. Баны отсутствуют
+
+<b>💥 ГРАНДИОЗНАЯ ПОБОИЩНАЯ ТУСОВКА</b>
+1. Формат: Best of Five (Bo5)
+2. Каждая команда банит по 5 чемпионов
+3. Карта: Summoner's Rift
+4. Перерыв: 5 минут
+5. Все споры решают организаторы
+"""
+    await update.message.reply_html(rules_text, reply_markup=reply_menu)
+
+# === ОСНОВНОЙ ХЭНДЛЕР ===
+def main() -> None:
+    application = Application.builder().token(TOKEN).build()
+
+    # Регистрация пользователя
+    conv_register_handler = ConversationHandler(
+        entry_points=[
+            CommandHandler("register", register_start),
+            MessageHandler(filters.Text("📝 Зарегистрироваться"), register_start)
+        ],
+        states={
+            NICK: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_nick)],
+            ROLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_role)],
+            RANK: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_rank)],
+            OP_GG: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_opgg)],
+            DISCORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_discord)]
+        },
+        fallbacks=[]  # Оставляем пустой список fallbacks, так как в нашем сценарии не нужны дополнительные команды выхода
+    )
+
+    # Редактирование профиля
+    conv_edit_handler = ConversationHandler(
+        entry_points=[CommandHandler("edit_profile", edit_profile), MessageHandler(filters.Text("📄 Редактировать профиль"), edit_profile)],
+        states={
+            "EDITING_PROFILE": [CallbackQueryHandler(process_field_selection)],
+            "WAITING_FOR_VALUE": [MessageHandler(filters.TEXT & ~filters.COMMAND, save_edited_field)]
+        },
+        fallbacks=[CallbackQueryHandler(lambda u,c: c.answer())],
+        per_message=True
+    )
+
+    application.add_handler(conv_register_handler)
+    application.add_handler(conv_edit_handler)
+    application.add_handler(MessageHandler(filters.Text("👥 Список участников"), show_participants))
+    application.add_handler(MessageHandler(filters.Text("📅 Дата проведения"), show_dates))
+    application.add_handler(MessageHandler(filters.Text("📜 Правила турниров"), show_rules))
+    application.add_handler(CommandHandler("start", start))
+
+    # Создание и запуск бота с методом run_polling()
+    init_files()
+    application.run_polling()
+
+if __name__ == "__main__":
+    main()
