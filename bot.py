@@ -270,6 +270,55 @@ def format_opgg_link(opgg):
     else:
         return f"https://op.gg/summoners/{opgg.replace(' ', '%20')}"
 
+# === ДАТА ПРОВЕДЕНИЯ ===
+async def show_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        with open(TOURNAMENTS_FILE, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            next(reader)  # Пропускаем заголовок
+            tournaments = list(reader)
+    except FileNotFoundError:
+        await update.message.reply_text("Нет запланированных турниров.", reply_markup=reply_menu)
+        return
+
+    if not tournaments:
+        await update.message.reply_text("Нет запланированных турниров.", reply_markup=reply_menu)
+        return
+
+    message = "<b>🗓️ Планируемые турниры:</b>\n\n"
+    for idx, (name, date) in enumerate(tournaments, start=1):
+        message += f"{idx}. ⬣️ <b>{name}:</b> {date}\n"
+
+    await update.message.reply_html(message, reply_markup=reply_menu)
+
+# === ПРАВИЛА ТУРНИРОВ ===
+async def show_rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    rules_text = """
+📜 <b>ПРАВИЛА ТУРНИРОВ</b>
+
+<b>🏆 БИТВА РЕГИОНОВ</b>
+1. Формат: Best of Five (Bo5)
+2. Команды: 2 по 5 человек
+3. Выбор региона: только один раз за матч
+4. Баны отсутствуют
+5. Спорные вопросы решают организаторы
+
+<b>🎲 ГОЛЛАНДСКИЙ РАНДОМ</b>
+1. Формат: 5v5, Bo5
+2. Команды формируются по MMR
+3. Система смещения ролей
+4. Рандомный выбор чемпионов
+5. Баны отсутствуют
+
+<b>💥 ГРАНДИОЗНАЯ ПОБОИЩНАЯ ТУСОВКА</b>
+1. Формат: Best of Five (Bo5)
+2. Каждая команда банит по 5 чемпионов
+3. Карта: Summoner's Rift
+4. Перерыв: 5 минут
+5. Все споры решают организаторы
+"""
+    await update.message.reply_html(rules_text, reply_markup=reply_menu)
+
 # === АДМИНИСТРАТОРСКАЯ ЧАСТЬ ===
 admin_menu_kb = [
     ["📅 Добавить турнир", "🖊️ Удалить турнир"],
@@ -437,7 +486,7 @@ def main() -> None:
             "WAITING_FOR_VALUE": [MessageHandler(filters.TEXT & ~filters.COMMAND, save_edited_field)]
         },
         fallbacks=[CallbackQueryHandler(lambda u,c: c.answer())],
-        per_user=False
+        per_message=True
     )
 
     # Панель администратора
@@ -449,7 +498,8 @@ def main() -> None:
             "REMOVE_TOURNAMENT_SELECTION": [CallbackQueryHandler(confirm_remove_tournament)],
             "REMOVE_PARTICIPANT_ID": [MessageHandler(filters.TEXT & ~filters.COMMAND, process_remove_participant)]
         },
-        fallbacks=[CallbackQueryHandler(lambda u,c: c.answer()), CommandHandler("admin", admin_panel)]
+        fallbacks=[CallbackQueryHandler(lambda u,c: c.answer()), CommandHandler("admin", admin_panel)],
+        per_message=True
     )
 
     application.add_handler(conv_register_handler)
