@@ -9,7 +9,7 @@ from telegram.ext import (
     filters,
     ContextTypes,
     ConversationHandler,
-    CallbackQueryHandler  # ✅ Правильно импортировали этот класс
+    CallbackQueryHandler
 )
 
 # === 🔑 ЗАМЕНИ НА СВОЙ ТОКЕН ===
