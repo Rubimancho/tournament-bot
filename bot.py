@@ -319,35 +319,18 @@ async def show_rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
     await update.message.reply_html(rules_text, reply_markup=reply_menu)
 
-# === КОМАНДА ДЛЯ УДАЛЕНИЯ УЧАСТНИКА ===
-DELETE_USER = range(1)
-
-async def delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# === КОМАНДА ДЛЯ УДАЛЕНИЯ ВСЕХ УЧАСТНИКОВ ===
+async def delete_all_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("Доступ ограничен.")
         return
     
-    await update.message.reply_text("Введите User ID участника, которого хотите удалить:")
-    return DELETE_USER
+    # Перезапись файла участников
+    with open(PARTICIPANTS_FILE, 'w', newline='', encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["User ID", "Никнейм", "Роли", "Ранг", "Op.gg", "Discord", "Время"])
 
-async def perform_delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    target_user_id = update.message.text.strip()
-    participants = load_participants()
-
-    found = False
-    for i, participant in enumerate(participants):
-        if participant.user_id == target_user_id:
-            found = True
-            del participants[i]
-            break
-    
-    if found:
-        save_participants(participants)
-        await update.message.reply_text(f"Участник с User ID {target_user_id} успешно удалён.")
-    else:
-        await update.message.reply_text(f"Участника с указанным User ID не найдено.")
-    
-    return ConversationHandler.END
+    await update.message.reply_text("Все участники успешно удалены.")
 
 # === ОСНОВНОЙ ХЭНДЛЕР ===
 def main() -> None:
@@ -380,18 +363,11 @@ def main() -> None:
         per_message=True
     )
 
-    # Удаление пользователя
-    conv_delete_user_handler = ConversationHandler(
-        entry_points=[CommandHandler("delete_user", delete_user)],
-        states={
-            DELETE_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, perform_delete_user)]
-        },
-        fallbacks=[]  # Оставляем пустой список fallbacks, так как в нашем сценарии не нужны дополнительные команды выхода
-    )
+    # Массивное удаление всех участников
+    application.add_handler(CommandHandler("delete_all_users", delete_all_users))
 
     application.add_handler(conv_register_handler)
     application.add_handler(conv_edit_handler)
-    application.add_handler(conv_delete_user_handler)
     application.add_handler(MessageHandler(filters.Text("👥 Список участников"), show_participants))
     application.add_handler(MessageHandler(filters.Text("📅 Дата проведения"), show_dates))
     application.add_handler(MessageHandler(filters.Text("📜 Правила турниров"), show_rules))
