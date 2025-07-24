@@ -24,7 +24,9 @@ ADMIN_ID = int(ADMIN_ID)
 
 # === 📁 ФАЙЛЫ ===
 PARTICIPANTS_FILE = "participants.csv"
+SUBSCRIBERS_FILE = "subscribers.txt"
 TOURNAMENTS_FILE = "tournaments.csv"
+NEWS_FILE = "news.txt"
 
 # === 🎯 ЭТАПЫ РЕГИСТРАЦИИ ===
 NICK, ROLE, RANK, OP_GG, DISCORD = range(5)
@@ -44,6 +46,16 @@ def init_files():
             writer = csv.writer(f)
             writer.writerow(["User ID", "Никнейм", "Роли", "Ранг", "Op.gg", "Discord", "Время"])
         print("📁 Файл participants.csv создан")
+
+    if not os.path.exists(SUBSCRIBERS_FILE):
+        with open(SUBSCRIBERS_FILE, "w", encoding="utf-8"):
+            pass
+        print("📁 Файл subscribers.txt создан")
+
+    if not os.path.exists(NEWS_FILE):
+        with open(NEWS_FILE, "w", encoding="utf-8"):
+            pass
+        print("📁 Файл news.txt создан")
 
     if not os.path.exists(TOURNAMENTS_FILE):
         with open(TOURNAMENTS_FILE, "w", newline='', encoding="utf-8") as f:
@@ -351,45 +363,55 @@ async def edit_tournament_date(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text(f"Турнир '{tourney_name}' успешно добавлен с датой {tourney_date}.")
     return ConversationHandler.END
 
-# === КОМАНДА ДЛЯ УДАЛЕНИЯ ПРОШЕДШИХ ТУРНИРОВ ===
-async def delete_past_tournaments(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# === КОМАНДА ДЛЯ ДОБАВЛЕНИЯ НОВОСТЕЙ ===
+async def add_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("Доступ закрыт.")
         return
     
-    now = datetime.now()
-    cleaned_tournaments = []
+    await update.message.reply_text("Напишите анонс турнира или новость:")
+    return "GET_NEWS_TEXT"
 
+async def get_news_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    news_text = update.message.text.strip()
+    with open(NEWS_FILE, 'a', encoding="utf-8") as f:
+        f.write(news_text + '\n')
+
+    await send_news_to_subscribers(news_text)
+    await update.message.reply_text("Новость опубликована и отправлена подписчикам.")
+    return ConversationHandler.END
+
+# === РАССЫЛКА НОВОСТЕЙ ПОДПИСЧИКАМ ===
+async def send_news_to_subscribers(news_text):
+    subscribers = read_subscribers()
+    for subscriber_id in subscribers:
+        await application.bot.send_message(chat_id=subscriber_id, text=news_text)
+
+# === ПОДПИСКА НА НОВОСТИ ===
+async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in read_subscribers():
+        write_subscriber(user_id)
+        await update.message.reply_text("Вы успешно подписались на новостную рассылку.")
+    else:
+        await update.message.reply_text("Вы уже подписаны на новости.")
+
+# === ЧТЕНИЕ СПИСКА ПОДПИСЧИКОВ ===
+def read_subscribers():
     try:
-        with open(TOURNAMENTS_FILE, 'r', encoding='utf-8') as file:
-            reader = csv.reader(file)
-            next(reader)  # Пропускаем первую строку-заголовок
-            
-            for row in reader:
-                if len(row) >= 2:
-                    name, date_str = row[0], row[1]
-                    
-                    # Парсим дату из строки
-                    event_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
-                    
-                    # Если дата будущего турнира, добавляем обратно в файл
-                    if event_date > now:
-                        cleaned_tournaments.append(row)
-                
-        # Перезаписываем файл с оставшимися будущими турнирами
-        with open(TOURNAMENTS_FILE, 'w', newline='', encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerow(["Название", "Дата"])  # записываем заголовок
-            writer.writerows(cleaned_tournaments)
-    
-    except Exception as e:
-        await update.message.reply_text(f"Ошибка при удалении прошедших турниров: {e}")
-        return
+        with open(SUBSCRIBERS_FILE, 'r', encoding="utf-8") as f:
+            return [line.strip() for line in f.read().splitlines()]
+    except FileNotFoundError:
+        return []
 
-    await update.message.reply_text("Прошедшие турниры успешно удалены.")
+# === ЗАПИСЬ ПОДПИСЧИКА ===
+def write_subscriber(subscriber_id):
+    with open(SUBSCRIBERS_FILE, 'a', encoding="utf-8") as f:
+        f.write(str(subscriber_id) + '\n')
 
 # === ОСНОВНОЙ ХЭНДЛЕР ===
 def main() -> None:
+    global application
     application = Application.builder().token(TOKEN).build()
 
     # Регистрация пользователя
@@ -428,11 +450,21 @@ def main() -> None:
         fallbacks=[]  # Оставляем пустой список fallbacks, так как в нашем сценарии не нужны дополнительные команды выхода
     )
 
+    # Добавление новостей
+    conv_add_news_handler = ConversationHandler(
+        entry_points=[CommandHandler("add_news", add_news)],
+        states={
+            "GET_NEWS_TEXT": [MessageHandler(filters.TEXT & ~filters.COMMAND, get_news_text)]
+        },
+        fallbacks=[]  # Оставляем пустой список fallbacks, так как в нашем сценарии не нужны дополнительные команды выхода
+    )
+
     application.add_handler(conv_register_handler)
     application.add_handler(conv_edit_handler)
     application.add_handler(conv_edit_tournament_handler)
+    application.add_handler(conv_add_news_handler)
     application.add_handler(CommandHandler("clean_all_users", clean_all_users))  # Команда для массовых очисток
-    application.add_handler(CommandHandler("delete_past_tournaments", delete_past_tournaments))  # Новая команда для удаления прошедших турниров
+    application.add_handler(CommandHandler("subscribe", subscribe))  # Команда подписки на новости
     application.add_handler(MessageHandler(filters.Text("👥 Список участников"), show_participants))
     application.add_handler(MessageHandler(filters.Text("📅 Дата проведения"), show_dates))
     application.add_handler(MessageHandler(filters.Text("📜 Правила турниров"), show_rules))
