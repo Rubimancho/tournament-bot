@@ -1,7 +1,7 @@
 import os
 import csv
 from datetime import datetime
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -35,7 +35,7 @@ NICK, ROLE, RANK, OP_GG, DISCORD = range(5)
 main_menu_kb = [
     ["📝 Зарегистрироваться"],
     ["👥 Список участников", "📅 Дата проведения"],
-    ["📜 Правила турниров"]
+    ["📜 Правила турниров", "🔔 Подписаться на новости"]
 ]
 reply_menu = ReplyKeyboardMarkup(main_menu_kb, resize_keyboard=True)
 
@@ -459,12 +459,14 @@ def main() -> None:
         fallbacks=[]  # Оставляем пустой список fallbacks, так как в нашем сценарии не нужны дополнительные команды выхода
     )
 
+    # Обработчик подписки на новости
+    application.add_handler(MessageHandler(filters.Text("🔔 Подписаться на новости"), subscribe))
+
     application.add_handler(conv_register_handler)
     application.add_handler(conv_edit_handler)
     application.add_handler(conv_edit_tournament_handler)
     application.add_handler(conv_add_news_handler)
     application.add_handler(CommandHandler("clean_all_users", clean_all_users))  # Команда для массовых очисток
-    application.add_handler(CommandHandler("subscribe", subscribe))  # Команда подписки на новости
     application.add_handler(MessageHandler(filters.Text("👥 Список участников"), show_participants))
     application.add_handler(MessageHandler(filters.Text("📅 Дата проведения"), show_dates))
     application.add_handler(MessageHandler(filters.Text("📜 Правила турниров"), show_rules))
