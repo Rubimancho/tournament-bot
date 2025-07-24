@@ -351,6 +351,43 @@ async def edit_tournament_date(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text(f"Турнир '{tourney_name}' успешно добавлен с датой {tourney_date}.")
     return ConversationHandler.END
 
+# === КОМАНДА ДЛЯ УДАЛЕНИЯ ПРОШЕДШИХ ТУРНИРОВ ===
+async def delete_past_tournaments(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("Доступ закрыт.")
+        return
+    
+    now = datetime.now()
+    cleaned_tournaments = []
+
+    try:
+        with open(TOURNAMENTS_FILE, 'r', encoding='utf-8') as file:
+            reader = csv.reader(file)
+            next(reader)  # Пропускаем первую строку-заголовок
+            
+            for row in reader:
+                if len(row) >= 2:
+                    name, date_str = row[0], row[1]
+                    
+                    # Парсим дату из строки
+                    event_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
+                    
+                    # Если дата будущего турнира, добавляем обратно в файл
+                    if event_date > now:
+                        cleaned_tournaments.append(row)
+                
+        # Перезаписываем файл с оставшимися будущими турнирами
+        with open(TOURNAMENTS_FILE, 'w', newline='', encoding="utf-8") as file:
+            writer = csv.writer(file)
+            writer.writerow(["Название", "Дата"])  # записываем заголовок
+            writer.writerows(cleaned_tournaments)
+    
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка при удалении прошедших турниров: {e}")
+        return
+
+    await update.message.reply_text("Прошедшие турниры успешно удалены.")
+
 # === ОСНОВНОЙ ХЭНДЛЕР ===
 def main() -> None:
     application = Application.builder().token(TOKEN).build()
@@ -394,7 +431,8 @@ def main() -> None:
     application.add_handler(conv_register_handler)
     application.add_handler(conv_edit_handler)
     application.add_handler(conv_edit_tournament_handler)
-    application.add_handler(CommandHandler("clean_all_users", clean_all_users))
+    application.add_handler(CommandHandler("clean_all_users", clean_all_users))  # Команда для массовых очисток
+    application.add_handler(CommandHandler("delete_past_tournaments", delete_past_tournaments))  # Новая команда для удаления прошедших турниров
     application.add_handler(MessageHandler(filters.Text("👥 Список участников"), show_participants))
     application.add_handler(MessageHandler(filters.Text("📅 Дата проведения"), show_dates))
     application.add_handler(MessageHandler(filters.Text("📜 Правила турниров"), show_rules))
