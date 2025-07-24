@@ -47,7 +47,7 @@ def init_files():
         print("📁 Файл participants.csv создан")
 
     if not os.path.exists(TOURNAMENTS_FILE):
-        with open(TOURNAMENTS_FILE, "w", newline='', encoding="utf-8") как f:
+        with open(TOURNAMENTS_FILE, "w", newline='', encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow(["Название", "Дата"])
         print("📁 Файл tournaments.csv создан")
