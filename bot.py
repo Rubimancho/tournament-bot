@@ -1,15 +1,14 @@
 import os
 import csv
 from datetime import datetime
-from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
     filters,
     ContextTypes,
-    ConversationHandler,
-    CallbackQueryHandler
+    ConversationHandler
 )
 
 # === 🔑 ЗАМЕНИ НА СВОЙ ТОКЕН ===
@@ -171,34 +170,25 @@ async def edit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "discord": "Изменить Discord"
     }
 
-    keyboard = [[InlineKeyboardButton(text=v, callback_data=k)] for k, v in fields.items()]
-    keyboard.append([InlineKeyboardButton(text="Отмена", callback_data="cancel_edit")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    options = "\n".join([f"/edit_{k} — {v}" for k, v in fields.items()])
+    await update.message.reply_text(f"Выполните одну из команд для редактирования профиля:\n{options}")
 
-    await update.message.reply_text("Выберите поле для редактирования:", reply_markup=reply_markup)
-    return "EDITING_PROFILE"
-
-async def process_field_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    field_name = query.data
-    await query.answer()
-
-    if field_name == "cancel_edit":
-        await query.edit_message_text("Редактирование отменено.")
-        return ConversationHandler.END
-
+async def edit_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    field_name = update.message.text.lstrip('/').split('_')[1]
     participant = find_participant_by_id(user_id)
-    current_value = getattr(participant, field_name)
+    if not participant:
+        await update.message.reply_text("Вы не зарегистрированы. Сначала зарегистрируйтесь.")
+        return
 
-    await query.edit_message_text(f"Текущее значение: {current_value}\nВведите новое значение:")
-    context.user_data["editing_field"] = field_name
-    return "WAITING_FOR_VALUE"
+    await update.message.reply_text(f"Текущее значение: {getattr(participant, field_name)}\nВведите новое значение:")
+    context.user_data["field_to_edit"] = field_name
+    return "WAITING_FOR_NEW_VALUE"
 
-async def save_edited_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def save_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     new_value = update.message.text
-    editing_field = context.user_data.pop("editing_field")
+    field_name = context.user_data.pop("field_to_edit")
 
     # Загружаем всех участников
     participants = load_participants()
@@ -208,7 +198,7 @@ async def save_edited_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     # Изменяем значения
-    setattr(participants[index], editing_field, new_value)
+    setattr(participants[index], field_name, new_value)
     save_participants(participants)
 
     await update.message.reply_text("Данные успешно обновлены.", reply_markup=reply_menu)
@@ -320,7 +310,7 @@ async def show_rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_html(rules_text, reply_markup=reply_menu)
 
 # === КОМАНДА ДЛЯ УДАЛЕНИЯ ВСЕХ УЧАСТНИКОВ ===
-async def delete_all_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def clean_all_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("Доступ закрыт.")
         return
@@ -332,73 +322,14 @@ async def delete_all_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("Все участники успешно удалены.")
 
-# === КОМАНДА ДЛЯ УДАЛЕНИЯ КОНКРЕТНОГО УЧАСТНИКА ===
-DELETE_USER = range(1)
-
-async def delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("Доступ закрыт.")
-        return
-    
-    await update.message.reply_text("Введите User ID участника, которого хотите удалить:")
-    return DELETE_USER
-
-async def perform_delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    target_user_id = update.message.text.strip()
-    participants = load_participants()
-
-    found = False
-    for i, participant in enumerate(participants):
-        if participant.user_id == target_user_id:
-            found = True
-            del participants[i]
-            break
-    
-    if found:
-        save_participants(participants)
-        await update.message.reply_text(f"Участник с User ID {target_user_id} успешно удалён.")
-    else:
-        await update.message.reply_text(f"Участника с указанным User ID не найдено.")
-    
-    return ConversationHandler.END
-
-# === АДМИНИСТРАТИВНАЯ ПАНЕЛЬ ===
-async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("Доступ закрыт.")
-        return
-    
-    # Меню администратора
-    admin_menu_buttons = [
-        [InlineKeyboardButton("Просмотр участников", callback_data="view_participants")],
-        [InlineKeyboardButton("Удалить пользователя", callback_data="delete_user")],
-        [InlineKeyboardButton("Редактировать турнир", callback_data="edit_tournament")],
-        [InlineKeyboardButton("Массовое удаление", callback_data="delete_all_users")],
-        [InlineKeyboardButton("Закрыть", callback_data="close_admin")]
-    ]
-    reply_markup = InlineKeyboardMarkup(admin_menu_buttons)
-
-    await update.message.reply_text("Административная панель:", reply_markup=reply_markup)
-
-async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "view_participants":
-        await show_participants(query, context)
-    elif query.data == "delete_user":
-        await delete_user(query, context)
-    elif query.data == "edit_tournament":
-        await edit_tournament(query, context)
-    elif query.data == "delete_all_users":
-        await delete_all_users(query, context)
-    elif query.data == "close_admin":
-        await query.edit_message_text("Административная панель закрыта.")
-
-# === РЕДАКТИРОВАНИЕ ТУРНИРА ===
+# === КОМАНДА ДЛЯ РЕДАКТИРОВАНИЯ ТУРНИРА ===
 EDITOR_STATE_NAME, EDITOR_STATE_DATE = range(2)
 
 async def edit_tournament(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("Доступ закрыт.")
+        return
+    
     await update.message.reply_text("Введите название турнира:")
     return EDITOR_STATE_NAME
 
@@ -442,25 +373,17 @@ def main() -> None:
 
     # Редактирование профиля
     conv_edit_handler = ConversationHandler(
-        entry_points=[CommandHandler("edit_profile", edit_profile), MessageHandler(filters.Text("📄 Редактировать профиль"), edit_profile)],
+        entry_points=[CommandHandler("edit_profile", edit_profile)],
         states={
-            "EDITING_PROFILE": [CallbackQueryHandler(process_field_selection)],
-            "WAITING_FOR_VALUE": [MessageHandler(filters.TEXT & ~filters.COMMAND, save_edited_field)]
+            "WAITING_FOR_NEW_VALUE": [MessageHandler(filters.TEXT & ~filters.COMMAND, save_new_value)]
         },
-        fallbacks=[CallbackQueryHandler(lambda u,c: c.answer())],
+        fallbacks=[CommandHandler("edit_profile", edit_profile)],  # Возвращаемся к началу редактирования профиля
         per_message=True
-    )
-
-    # Удаление пользователя
-    conv_delete_user_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(delete_user)],
-        states={DELETE_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, perform_delete_user)]},
-        fallbacks=[]  # Оставляем пустой список fallbacks, так как в нашем сценарии не нужны дополнительные команды выхода
     )
 
     # Редактирование турнира
     conv_edit_tournament_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(edit_tournament)],
+        entry_points=[CommandHandler("edit_tournament", edit_tournament)],
         states={
             EDITOR_STATE_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_tournament_name)],
             EDITOR_STATE_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_tournament_date)]
@@ -468,18 +391,10 @@ def main() -> None:
         fallbacks=[]  # Оставляем пустой список fallbacks, так как в нашем сценарии не нужны дополнительные команды выхода
     )
 
-    # Административная панель
-    conv_admin_handler = ConversationHandler(
-        entry_points=[CommandHandler("admin", admin_panel)],
-        states={"ADMIN_MENU": [CallbackQueryHandler(handle_admin_actions)]},
-        fallbacks=[]  # Оставляем пустой список fallbacks, так как в нашем сценарии не нужны дополнительные команды выхода
-    )
-
     application.add_handler(conv_register_handler)
     application.add_handler(conv_edit_handler)
-    application.add_handler(conv_delete_user_handler)
     application.add_handler(conv_edit_tournament_handler)
-    application.add_handler(conv_admin_handler)
+    application.add_handler(CommandHandler("clean_all_users", clean_all_users))
     application.add_handler(MessageHandler(filters.Text("👥 Список участников"), show_participants))
     application.add_handler(MessageHandler(filters.Text("📅 Дата проведения"), show_dates))
     application.add_handler(MessageHandler(filters.Text("📜 Правила турниров"), show_rules))
