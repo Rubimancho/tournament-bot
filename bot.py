@@ -332,6 +332,66 @@ async def delete_all_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("Все участники успешно удалены.")
 
+# === КОМАНДА ДЛЯ УДАЛЕНИЯ КОНКРЕТНОГО УЧАСТНИКА ===
+DELETE_USER = range(1)
+
+async def delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("Доступ закрыт.")
+        return
+    
+    await update.message.reply_text("Введите User ID участника, которого хотите удалить:")
+    return DELETE_USER
+
+async def perform_delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    target_user_id = update.message.text.strip()
+    participants = load_participants()
+
+    found = False
+    for i, participant in enumerate(participants):
+        if participant.user_id == target_user_id:
+            found = True
+            del participants[i]
+            break
+    
+    if found:
+        save_participants(participants)
+        await update.message.reply_text(f"Участник с User ID {target_user_id} успешно удалён.")
+    else:
+        await update.message.reply_text(f"Участника с указанным User ID не найдено.")
+    
+    return ConversationHandler.END
+
+# === АДМИНИСТРАТИВНАЯ ПАНЕЛЬ ===
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("Доступ закрыт.")
+        return
+    
+    # Меню администратора
+    admin_menu_buttons = [
+        [InlineKeyboardButton("Просмотр участников", callback_data="view_participants")],
+        [InlineKeyboardButton("Удалить пользователя", callback_data="delete_user")],
+        [InlineKeyboardButton("Массовое удаление", callback_data="delete_all_users")],
+        [InlineKeyboardButton("Закрыть", callback_data="close_admin")]
+    ]
+    reply_markup = InlineKeyboardMarkup(admin_menu_buttons)
+
+    await update.message.reply_text("Административная панель:", reply_markup=reply_markup)
+
+async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "view_participants":
+        await show_participants(query, context)
+    elif query.data == "delete_user":
+        await delete_user(query, context)
+    elif query.data == "delete_all_users":
+        await delete_all_users(query, context)
+    elif query.data == "close_admin":
+        await query.edit_message_text("Административная панель закрыта.")
+
 # === ОСНОВНОЙ ХЭНДЛЕР ===
 def main() -> None:
     application = Application.builder().token(TOKEN).build()
@@ -363,11 +423,24 @@ def main() -> None:
         per_message=True
     )
 
-    # Массивное удаление всех участников
-    application.add_handler(CommandHandler("delete_all_users", delete_all_users))
+    # Удаление пользователя
+    conv_delete_user_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(delete_user)],
+        states={DELETE_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, perform_delete_user)]},
+        fallbacks=[]  # Оставляем пустой список fallbacks, так как в нашем сценарии не нужны дополнительные команды выхода
+    )
+
+    # Административная панель
+    conv_admin_handler = ConversationHandler(
+        entry_points=[CommandHandler("admin", admin_panel)],
+        states={"ADMIN_MENU": [CallbackQueryHandler(handle_admin_actions)]},
+        fallbacks=[]  # Оставляем пустой список fallbacks, так как в нашем сценарии не нужны дополнительные команды выхода
+    )
 
     application.add_handler(conv_register_handler)
     application.add_handler(conv_edit_handler)
+    application.add_handler(conv_delete_user_handler)
+    application.add_handler(conv_admin_handler)
     application.add_handler(MessageHandler(filters.Text("👥 Список участников"), show_participants))
     application.add_handler(MessageHandler(filters.Text("📅 Дата проведения"), show_dates))
     application.add_handler(MessageHandler(filters.Text("📜 Правила турниров"), show_rules))
