@@ -1,7 +1,7 @@
 import os
 import csv
 from datetime import datetime
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -35,7 +35,8 @@ NICK, ROLE, RANK, OP_GG, DISCORD = range(5)
 main_menu_kb = [
     ["📝 Зарегистрироваться"],
     ["👥 Список участников", "📅 Дата проведения"],
-    ["📜 Правила турниров", "🔔 Подписаться на новости"]
+    ["📜 Правила турниров", "🔔 Подписаться на новости"],
+    ["📄 Редактировать профиль"]
 ]
 reply_menu = ReplyKeyboardMarkup(main_menu_kb, resize_keyboard=True)
 
@@ -182,18 +183,22 @@ async def edit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "discord": "Изменить Discord"
     }
 
-    options = "\n".join([f"/edit_{k} — {v}" for k, v in fields.items()])
-    await update.message.reply_text(f"Выполните одну из команд для редактирования профиля:\n{options}")
+    buttons = [[InlineKeyboardButton(v, callback_data=k)] for k, v in fields.items()]
+    reply_markup = InlineKeyboardMarkup(buttons)
 
-async def edit_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Выберите поле для редактирования:", reply_markup=reply_markup)
+    return "SELECT_FIELD_TO_EDIT"
+
+async def select_field_to_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    field_name = query.data
+    await query.answer()
+
     user_id = update.effective_user.id
-    field_name = update.message.text.lstrip('/').split('_')[1]
     participant = find_participant_by_id(user_id)
-    if not participant:
-        await update.message.reply_text("Вы не зарегистрированы. Сначала зарегистрируйтесь.")
-        return
+    current_value = getattr(participant, field_name)
 
-    await update.message.reply_text(f"Текущее значение: {getattr(participant, field_name)}\nВведите новое значение:")
+    await query.edit_message_text(f"Текущее значение: {current_value}\nВведите новое значение:")
     context.user_data["field_to_edit"] = field_name
     return "WAITING_FOR_NEW_VALUE"
 
@@ -432,11 +437,12 @@ def main() -> None:
 
     # Редактирование профиля
     conv_edit_handler = ConversationHandler(
-        entry_points=[CommandHandler("edit_profile", edit_profile)],
+        entry_points=[MessageHandler(filters.Text("📄 Редактировать профиль"), edit_profile)],
         states={
+            "SELECT_FIELD_TO_EDIT": [CallbackQueryHandler(select_field_to_edit)],
             "WAITING_FOR_NEW_VALUE": [MessageHandler(filters.TEXT & ~filters.COMMAND, save_new_value)]
         },
-        fallbacks=[CommandHandler("edit_profile", edit_profile)],  # Возвращаемся к началу редактирования профиля
+        fallbacks=[MessageHandler(filters.Text("📄 Редактировать профиль"), edit_profile)],  # Возвращаемся к началу редактирования профиля
         per_message=True
     )
 
