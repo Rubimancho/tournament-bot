@@ -8,7 +8,8 @@ from telegram.ext import (
     MessageHandler,
     filters,
     ContextTypes,
-    ConversationHandler
+    ConversationHandler,
+    CallbackQueryHandler  # ✅ Правильно импортировали этот класс
 )
 
 # === 🔑 ЗАМЕНИ НА СВОЙ ТОКЕН ===
