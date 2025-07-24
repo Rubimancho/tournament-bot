@@ -372,6 +372,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_menu_buttons = [
         [InlineKeyboardButton("Просмотр участников", callback_data="view_participants")],
         [InlineKeyboardButton("Удалить пользователя", callback_data="delete_user")],
+        [InlineKeyboardButton("Редактировать турнир", callback_data="edit_tournament")],
         [InlineKeyboardButton("Массовое удаление", callback_data="delete_all_users")],
         [InlineKeyboardButton("Закрыть", callback_data="close_admin")]
     ]
@@ -387,10 +388,37 @@ async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYP
         await show_participants(query, context)
     elif query.data == "delete_user":
         await delete_user(query, context)
+    elif query.data == "edit_tournament":
+        await edit_tournament(query, context)
     elif query.data == "delete_all_users":
         await delete_all_users(query, context)
     elif query.data == "close_admin":
         await query.edit_message_text("Административная панель закрыта.")
+
+# === РЕДАКТИРОВАНИЕ ТУРНИРА ===
+EDITOR_STATE_NAME, EDITOR_STATE_DATE = range(2)
+
+async def edit_tournament(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Введите название турнира:")
+    return EDITOR_STATE_NAME
+
+async def edit_tournament_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tourney_name = update.message.text.strip()
+    context.user_data['tourney_name'] = tourney_name
+    await update.message.reply_text("Введите дату турнира (Формат: ДД.ММ.ГГГГ чч:мм):")
+    return EDITOR_STATE_DATE
+
+async def edit_tournament_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tourney_date = update.message.text.strip()
+    tourney_name = context.user_data.pop('tourney_name')
+
+    # Сохраняем турнир в файл
+    with open(TOURNAMENTS_FILE, 'a', newline='', encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([tourney_name, tourney_date])
+
+    await update.message.reply_text(f"Турнир '{tourney_name}' успешно добавлен с датой {tourney_date}.")
+    return ConversationHandler.END
 
 # === ОСНОВНОЙ ХЭНДЛЕР ===
 def main() -> None:
@@ -430,6 +458,16 @@ def main() -> None:
         fallbacks=[]  # Оставляем пустой список fallbacks, так как в нашем сценарии не нужны дополнительные команды выхода
     )
 
+    # Редактирование турнира
+    conv_edit_tournament_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(edit_tournament)],
+        states={
+            EDITOR_STATE_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_tournament_name)],
+            EDITOR_STATE_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_tournament_date)]
+        },
+        fallbacks=[]  # Оставляем пустой список fallbacks, так как в нашем сценарии не нужны дополнительные команды выхода
+    )
+
     # Административная панель
     conv_admin_handler = ConversationHandler(
         entry_points=[CommandHandler("admin", admin_panel)],
@@ -440,6 +478,7 @@ def main() -> None:
     application.add_handler(conv_register_handler)
     application.add_handler(conv_edit_handler)
     application.add_handler(conv_delete_user_handler)
+    application.add_handler(conv_edit_tournament_handler)
     application.add_handler(conv_admin_handler)
     application.add_handler(MessageHandler(filters.Text("👥 Список участников"), show_participants))
     application.add_handler(MessageHandler(filters.Text("📅 Дата проведения"), show_dates))
